@@ -4,31 +4,34 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
-use App\Enums\NotificationPriority;
 use App\Enums\NotificationStatus;
 use App\Models\Notification;
 use App\Services\DeliveryService;
+use DateTime;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\Backoff;
 use Illuminate\Queue\Attributes\MaxExceptions;
 use Illuminate\Queue\Attributes\Timeout;
-use Illuminate\Queue\Attributes\Tries;
 use Illuminate\Queue\Middleware\RateLimitedWithRedis;
 use Illuminate\Queue\Middleware\ThrottlesExceptionsWithRedis;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
-#[Tries(5)]
+/**
+ * Up to five delivery attempts within an hour. Rate limit releases do not count as attempts,
+ * because the job is bounded by retryUntil() and MaxExceptions instead of a fixed number of tries.
+ */
 #[Backoff(5, 30, 120, 600)]
 #[Timeout(30)]
-#[MaxExceptions(3)]
+#[MaxExceptions(5)]
 class SendNotificationJob implements ShouldQueue
 {
     use Queueable;
 
     public function __construct(public Notification $notification)
     {
-        $this->onQueue($this->queueName($this->notification->priority));
+        $this->onQueue($notification->priority->queue());
     }
 
     /**
@@ -37,14 +40,19 @@ class SendNotificationJob implements ShouldQueue
     public function middleware(): array
     {
         return [
-            new RateLimitedWithRedis('channel-'.$this->notification->channel->value),
-            new ThrottlesExceptionsWithRedis(5, 60),
+            new RateLimitedWithRedis('notification-channel'),
+            new ThrottlesExceptionsWithRedis(10, 60),
         ];
+    }
+
+    public function retryUntil(): DateTime
+    {
+        return now()->addHour()->toDateTime();
     }
 
     public function handle(DeliveryService $deliveryService): void
     {
-        $notification = $this->notification->fresh() ?? $this->notification;
+        $notification = $this->notification;
 
         if (! in_array($notification->status, [NotificationStatus::Pending, NotificationStatus::Processing], true)) {
             return;
@@ -55,24 +63,25 @@ class SendNotificationJob implements ShouldQueue
             'channel' => $notification->channel->value,
         ]);
 
-        Log::info('Notification job processing started.', [
-            'notification_id' => $notification->id,
-            'priority' => $notification->priority->value,
-        ]);
-
         $deliveryService->deliver($notification);
 
-        Log::info('Notification delivery completed successfully.', [
+        Log::info('Notification delivered.', [
             'notification_id' => $notification->id,
+            'attempts' => $notification->attempt_count,
         ]);
     }
 
-    private function queueName(NotificationPriority $priority): string
+    public function failed(?Throwable $exception): void
     {
-        return match ($priority) {
-            NotificationPriority::High => 'high',
-            NotificationPriority::Low => 'low',
-            NotificationPriority::Normal => 'default',
-        };
+        $notification = $this->notification->fresh();
+
+        if ($notification === null) {
+            return;
+        }
+
+        app(DeliveryService::class)->markFailed(
+            $notification,
+            $exception?->getMessage() ?? 'Delivery gave up after the final attempt.',
+        );
     }
 }

@@ -9,4 +9,16 @@ enum NotificationPriority: string
     case High = 'high';
     case Normal = 'normal';
     case Low = 'low';
+
+    /**
+     * Queue that Horizon workers drain for this priority.
+     */
+    public function queue(): string
+    {
+        return match ($this) {
+            self::High => 'high',
+            self::Normal => 'default',
+            self::Low => 'low',
+        };
+    }
 }
