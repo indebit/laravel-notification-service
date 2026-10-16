@@ -12,6 +12,7 @@ use App\Models\Notification;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -24,64 +25,46 @@ class NotificationService
      */
     public function create(array $notificationValidatedData): Notification
     {
-        $idempotencyKey = $notificationValidatedData['idempotency_key'] ?? null;
-
-        if (is_string($idempotencyKey)) {
-            $existingNotification = Notification::where('idempotency_key', $idempotencyKey)->first();
-
-            if ($existingNotification instanceof Notification) {
-                return $existingNotification;
-            }
-        }
-
-        if (isset($notificationValidatedData['template_name'])) {
-            $notificationValidatedData['content'] = $this->templateService->render(
-                (string) $notificationValidatedData['template_name'],
-                (array) ($notificationValidatedData['template_variables'] ?? []),
-                NotificationChannel::from((string) $notificationValidatedData['channel']),
-            );
-        }
-
-        $priority = $notificationValidatedData['priority'] ?? NotificationPriority::Normal->value;
-        $priorityEnum = $priority instanceof NotificationPriority
-            ? $priority
-            : NotificationPriority::from((string) $priority);
-
-        $notification = Notification::create([
-            ...$notificationValidatedData,
-            'status' => NotificationStatus::Pending,
-            'priority' => $priorityEnum,
-        ]);
-
-        if ($notification->scheduled_at === null) {
-            SendNotificationJob::dispatch($notification)->onQueue($this->queueName($notification->priority));
-        }
+        $notification = $this->persist($notificationValidatedData);
+        $this->dispatchUnlessScheduled($notification);
 
         return $notification;
     }
 
     /**
+     * Create every notification in the batch or none of them.
+     *
+     * Jobs are only dispatched once the whole batch is stored, so a rejected batch never queues work.
+     *
      * @param  array<int, array<string, mixed>>  $notifications
      * @return array{batch_id: string, notifications: Collection<int, Notification>}
      */
     public function createBatch(array $notifications): array
     {
         $batchId = Str::uuid()->toString();
-        /** @var Collection<int, Notification> $createdNotifications */
-        $createdNotifications = new Collection;
 
-        foreach ($notifications as $data) {
-            $notification = $this->create([
-                ...$data,
-                'batch_id' => $batchId,
-            ]);
+        $created = DB::transaction(function () use ($notifications, $batchId): Collection {
+            /** @var Collection<int, Notification> $created */
+            $created = new Collection;
 
-            $createdNotifications->push($notification);
-        }
+            foreach ($notifications as $index => $data) {
+                try {
+                    $created->push($this->persist([...$data, 'batch_id' => $batchId]));
+                } catch (ValidationException $exception) {
+                    throw ValidationException::withMessages(collect($exception->errors())
+                        ->mapWithKeys(fn (array $messages, string $key): array => ["notifications.{$index}.{$key}" => $messages])
+                        ->all());
+                }
+            }
+
+            return $created;
+        });
+
+        $created->each(fn (Notification $notification) => $this->dispatchUnlessScheduled($notification));
 
         return [
             'batch_id' => $batchId,
-            'notifications' => $createdNotifications,
+            'notifications' => $created,
         ];
     }
 
@@ -119,12 +102,42 @@ class NotificationService
         return $query->paginate($perPage)->withQueryString();
     }
 
-    private function queueName(NotificationPriority $priority): string
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function persist(array $data): Notification
     {
-        return match ($priority) {
-            NotificationPriority::High => 'high',
-            NotificationPriority::Low => 'low',
-            NotificationPriority::Normal => 'default',
-        };
+        $idempotencyKey = $data['idempotency_key'] ?? null;
+
+        if (is_string($idempotencyKey)) {
+            $existingNotification = Notification::where('idempotency_key', $idempotencyKey)->first();
+
+            if ($existingNotification instanceof Notification) {
+                return $existingNotification;
+            }
+        }
+
+        if (isset($data['template_name'])) {
+            $data['content'] = $this->templateService->render(
+                (string) $data['template_name'],
+                (array) ($data['template_variables'] ?? []),
+                NotificationChannel::from((string) $data['channel']),
+            );
+        }
+
+        $priority = $data['priority'] ?? NotificationPriority::Normal->value;
+
+        return Notification::create([
+            ...$data,
+            'status' => NotificationStatus::Pending,
+            'priority' => $priority instanceof NotificationPriority ? $priority : NotificationPriority::from((string) $priority),
+        ]);
+    }
+
+    private function dispatchUnlessScheduled(Notification $notification): void
+    {
+        if ($notification->wasRecentlyCreated && $notification->scheduled_at === null) {
+            SendNotificationJob::dispatch($notification);
+        }
     }
 }
