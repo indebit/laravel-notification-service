@@ -1,0 +1,17 @@
+vendor/
+node_modules/
+.git/
+.env
+.env.backup
+.env.production
+storage/logs/
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/views/
+storage/phpstan/
+.scribe/
+public/vendor/scribe/
+.idea/
+.vscode/
+*.log
+docker-compose.override.yml

@@ -1,0 +1,983 @@
+{
+  "info": {
+    "_postman_id": "e6026456-7ff3-4248-9543-394d8a5670f0",
+    "name": "Laravel Notification Service",
+    "description": "Requests for the notification service API.\n\nSetup:\n1. Set the `base_url` variable to your app URL (default: http://localhost:8000)\n2. Point NOTIFICATION_PROVIDER_URL in .env at a webhook endpoint (for example webhook.site)\n3. Start the Docker stack with `docker compose up -d`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Observability",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Check system health: database, Redis, and Horizon status.\n\nReturns:\n- 200 for healthy/degraded\n- 503 for unhealthy"
+          },
+          "response": []
+        },
+        {
+          "name": "Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/metrics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "metrics"
+              ]
+            },
+            "description": "Real-time system metrics: queue depth, success/failure rates, latency, and throughput."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications — Create",
+      "item": [
+        {
+          "name": "Create Single Notification (SMS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.id) {",
+                  "        pm.collectionVariables.set('notification_id', jsonData.data.id);",
+                  "        console.log('Saved notification_id: ' + jsonData.data.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"+0745123456\",\n    \"channel\": \"sms\",\n    \"content\": \"Marketing sms here!\",\n    \"priority\": \"high\",\n    \"idempotency_key\": \"notification-12345\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Create a single SMS notification with high priority.\n\nAuto-saves the notification ID to the collection variable for use in subsequent requests."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Single Notification (Email)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"john.snow@gmail.com\",\n    \"channel\": \"email\",\n    \"content\": \"Welcome to Stark family.\",\n    \"priority\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Create a single email notification with normal priority."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Single Notification (Push)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"push-recipient-12345\",\n    \"channel\": \"push\",\n    \"content\": \"You have a new notificaiton here!\",\n    \"priority\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Create a single push notification with low priority."
+          },
+          "response": []
+        },
+        {
+          "name": "Test Idempotency (duplicate key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"+40749123456\",\n    \"channel\": \"sms\",\n    \"content\": \"Is this a duplicate?!\",\n    \"priority\": \"high\",\n    \"idempotency_key\": \"marketing-010101\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Send the same idempotency_key as the first SMS notification.\n\nExpected: returns the SAME notification (same ID), not a new one."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Batch (3 notifications)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.batch_id) {",
+                  "        pm.collectionVariables.set('batch_id', jsonData.batch_id);",
+                  "        console.log('Saved batch_id: ' + jsonData.batch_id);",
+                  "    } else if (jsonData.data && jsonData.data.batch_id) {",
+                  "        pm.collectionVariables.set('batch_id', jsonData.data.batch_id);",
+                  "        console.log('Saved batch_id: ' + jsonData.data.batch_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"notifications\": [\n        {\n            \"recipient\": \"+074513456\",\n            \"channel\": \"sms\",\n            \"content\": \"Hello! This is a testing SMS\",\n            \"priority\": \"high\",\n            \"scheduled_at\": \"2026-04-29 16:00:00\"\n        },\n        {\n            \"recipient\": \"john.snow@google.com\",\n            \"channel\": \"email\",\n            \"content\": \"I'm John Snow\",\n            \"priority\": \"normal\",\n            \"scheduled_at\": \"2026-04-29 16:00:00\"\n        },\n        {\n            \"recipient\": \"push-recipient-target\",\n            \"channel\": \"push\",\n            \"content\": \"You have a discount!\",\n            \"priority\": \"low\",\n            \"scheduled_at\": \"2026-04-29 16:00:00\"\n        }\n    ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications/batch",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "batch"
+              ]
+            },
+            "description": "Create a batch of 3 notifications across different channels and priorities.\n\nAll notifications share the same batch_id.\n\nAuto-saves batch_id to collection variable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications — Read",
+      "item": [
+        {
+          "name": "Get Notification by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notifications/{{notification_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "{{notification_id}}"
+              ]
+            },
+            "description": "Retrieve a single notification with its delivery logs.\n\nUses the notification_id saved from the Create request."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Batch by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notifications/batch/{{batch_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "batch",
+                "{{batch_id}}"
+              ]
+            },
+            "description": "Retrieve all notifications belonging to a batch.\n\nUses the batch_id saved from the Batch Create request."
+          },
+          "response": []
+        },
+        {
+          "name": "List All Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "List all notifications with default pagination (15 per page)."
+          },
+          "response": []
+        },
+        {
+          "name": "List — Filter by Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notifications?status=pending",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "status",
+                  "value": "failed",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "delivered",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List only delivered notifications."
+          },
+          "response": []
+        },
+        {
+          "name": "List — Filter by Channel",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notifications?channel=sms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "channel",
+                  "value": "sms"
+                },
+                {
+                  "key": "channel",
+                  "value": "push",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "channel",
+                  "value": "email",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List only SMS notifications."
+          },
+          "response": []
+        },
+        {
+          "name": "List — Filter by Date Range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notifications?from=2026-04-30 19:30&to=2026-04-30 19:59",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-04-30 19:30"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-04-30 19:59"
+                }
+              ]
+            },
+            "description": "List notifications within a date range."
+          },
+          "response": []
+        },
+        {
+          "name": "List — Combined Filters + Pagination",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notifications?status=pending&per_page=5&page=1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "channel",
+                  "value": "sms",
+                  "disabled": true
+                },
+                {
+                  "key": "priority",
+                  "value": "high",
+                  "disabled": true
+                },
+                {
+                  "key": "per_page",
+                  "value": "5"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Combine multiple filters with pagination."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications — Actions",
+      "item": [
+        {
+          "name": "Cancel Pending Notification",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notifications/{{notification_id}}/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "{{notification_id}}",
+                "cancel"
+              ]
+            },
+            "description": "Cancel a pending notification.\n\nOnly works if status is 'pending'. Returns error for non-pending notifications.\n\nTip: Create a new notification and cancel it quickly before Horizon processes it, or stop Horizon first."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Scheduled Notifications",
+      "item": [
+        {
+          "name": "Create Scheduled Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"+40749160898\",\n    \"channel\": \"sms\",\n    \"content\": \"This will be in the future\",\n    \"priority\": \"normal\",\n    \"scheduled_at\": \"2026-05-01 10:00:00 \"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Create a notification scheduled for future delivery.\n\nThe notification stays in 'pending' status and no job is dispatched immediately.\n\nThe scheduler command (notifications:process-scheduled) picks it up when scheduled_at has passed."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Templates",
+      "item": [
+        {
+          "name": "Create Template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.id) {",
+                  "        pm.collectionVariables.set('template_id', jsonData.data.id);",
+                  "        console.log('Saved template_id: ' + jsonData.data.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"payment_received\",\n    \"channel\": \"sms\",\n    \"body\": \"Hi {{name}}, your order {{order_id}} is now paid! Total: {{total}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "templates"
+              ]
+            },
+            "description": "Create a new notification template with variable placeholders.\n\nPlaceholders use {{variable_name}} syntax."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Template (email)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"welcome_user\",\n    \"channel\": \"email\",\n    \"body\": \"Welcome to Our Platform, {{name}}! Your account has been created. Your username is {{username}}. Get started at {{dashboard_url}}.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "templates"
+              ]
+            },
+            "description": "Create an email template."
+          },
+          "response": []
+        },
+        {
+          "name": "List Templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "templates"
+              ]
+            },
+            "description": "List all available notification templates."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Template by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/templates/{{template_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "templates",
+                "{{template_id}}"
+              ]
+            },
+            "description": "Retrieve a single template by ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Notification Using Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"+40745123456789\",\n    \"channel\": \"sms\",\n    \"template_name\": \"payment_received\",\n    \"content\": \"Test message here\",\n    \"template_variables\": {\n        \"name\": \"Catalin\",\n        \"order_id\": \"ORD-4567\",\n        \"total\": \"$129.99\"\n    },\n    \"priority\": \"high\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Create a notification using a template.\n\nThe template variables are substituted into the template body, and the rendered content is stored on the notification.\n\nNote: 'content' field is not needed when using a template."
+          },
+          "response": []
+        },
+        {
+          "name": "Template — Missing Variables (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"+40745123456\",\n    \"channel\": \"sms\",\n    \"template_name\": \"order_confirmed\",\n    \"template_variables\": {\n        \"name\": \"Catalin\"\n    },\n    \"priority\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Attempt to use a template with missing variables.\n\nExpected: error because order_id and total are in the template but not provided."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Validation Tests",
+      "item": [
+        {
+          "name": "Missing Required Fields",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"priority\": \"high\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Send a request missing required fields.\n\nExpected: 422 with validation errors for recipient, channel, and content."
+          },
+          "response": []
+        },
+        {
+          "name": "Invalid Channel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"+40745123456\",\n    \"channel\": \"telegram\",\n    \"content\": \"Test message\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Send an invalid channel value.\n\nExpected: 422 — channel must be one of: sms, email, push."
+          },
+          "response": []
+        },
+        {
+          "name": "Invalid Priority",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"+40745123456\",\n    \"channel\": \"sms\",\n    \"content\": \"Test message\",\n    \"priority\": \"urgent\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Send an invalid priority value.\n\nExpected: 422 — priority must be one of: high, normal, low."
+          },
+          "response": []
+        },
+        {
+          "name": "SMS Content Too Long (>160 chars)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"+40745123456\",\n    \"channel\": \"sms\",\n    \"content\": \"This is a very long SMS message that exceeds the 160 character limit for SMS notifications. We are adding more and more text here to make absolutely sure that this message goes well beyond the maximum allowed length for an SMS channel notification.\",\n    \"priority\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "description": "Send an SMS with content exceeding 160 characters.\n\nExpected: 422 — content exceeds maximum length for sms channel."
+          },
+          "response": []
+        },
+        {
+          "name": "Batch Over 1000 (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"notifications\": []\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notifications/batch",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "batch"
+              ]
+            },
+            "description": "Send an empty batch.\n\nExpected: 422 — notifications array must have at least 1 item.\n\nNote: Testing with 1001 items is impractical in Postman, but the validation exists and is covered by Pest tests."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Websockets",
+      "item": [
+        {
+          "name": "Websockets Testing",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/test/broadcast",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "test",
+                "broadcast"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "notification_id",
+      "value": ""
+    },
+    {
+      "key": "batch_id",
+      "value": ""
+    },
+    {
+      "key": "template_id",
+      "value": ""
+    }
+  ]
+}

@@ -1,0 +1,182 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notification-system-api
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+    command: php-fpm
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: notification_system_api
+      DB_USERNAME: notification_system_api
+      DB_PASSWORD: notification_system_api
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+      NOTIFICATION_PROVIDER_URL: https://webhook.site/replace-with-your-uuid
+      RUN_MIGRATIONS: "true"
+      BROADCAST_CONNECTION: reverb
+      REVERB_APP_ID: notification-system
+      REVERB_APP_KEY: notification-system-key
+      REVERB_APP_SECRET: notification-system-secret
+      REVERB_HOST: reverb
+      REVERB_PORT: "8080"
+      REVERB_SCHEME: http
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - notification_system_api_network
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: notification-system-api-nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks:
+      - notification_system_api_network
+
+  mysql:
+    image: mysql:8.4
+    container_name: notification_system_api_mysql
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_DATABASE: notification_system_api
+      MYSQL_USER: notification_system_api
+      MYSQL_PASSWORD: notification_system_api
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -proot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - notification_system_api_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: notification_system_api_redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks:
+      - notification_system_api_network
+
+  horizon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notification_system_api_horizon
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+    command: php artisan horizon
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: notification_system_api
+      DB_USERNAME: notification_system_api
+      DB_PASSWORD: notification_system_api
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QUEUE_CONNECTION: redis
+      RUN_MIGRATIONS: "false"
+      BROADCAST_CONNECTION: reverb
+      REVERB_APP_ID: notification-system
+      REVERB_APP_KEY: notification-system-key
+      REVERB_APP_SECRET: notification-system-secret
+      REVERB_HOST: reverb
+      REVERB_PORT: "8080"
+      REVERB_SCHEME: http
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_started
+    networks:
+      - notification_system_api_network
+
+  reverb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notification_system_api_reverb
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: notification_system_api
+      DB_USERNAME: notification_system_api
+      DB_PASSWORD: notification_system_api
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      RUN_MIGRATIONS: "false"
+      BROADCAST_CONNECTION: reverb
+      REVERB_APP_ID: notification-system
+      REVERB_APP_KEY: notification-system-key
+      REVERB_APP_SECRET: notification-system-secret
+      # Client-visible host for WebSockets when connecting from the host machine (port 8080 is published).
+      REVERB_HOST: localhost
+      REVERB_PORT: "8080"
+      REVERB_SCHEME: http
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    networks:
+      - notification_system_api_network
+
+volumes:
+  mysql_data:
+
+networks:
+  notification_system_api_network:
+    driver: bridge
