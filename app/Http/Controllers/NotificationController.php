@@ -56,9 +56,15 @@ class NotificationController extends Controller
      *
      * @bodyParam recipient string required The notification recipient (phone, email, or device token). Example: +40745123456
      * @bodyParam channel string required The delivery channel. Example: sms
-     * @bodyParam content string required The message content. Example: Your order has shipped!
+     * @bodyParam content string The message content. Required unless template_name is given. Example: Your order has shipped!
      * @bodyParam priority string The priority level. Defaults to normal. Example: high
+     * @bodyParam idempotency_key string Key that makes repeated requests return the stored notification. Example: order-123-shipped
+     * @bodyParam scheduled_at string ISO 8601 date and time to send at instead of now. Example: 2026-05-01T09:30:00+00:00
+     * @bodyParam template_name string Template to render the content from, for the same channel. Example: order_shipped
+     * @bodyParam template_variables object Values for the template placeholders. Required with template_name. Example: {"name":"Alex","order_id":"A-1001"}
      *
+     * @response 200 scenario="Repeated idempotency key" {"data":{"id":"uuid","status":"pending","idempotency_key":"order-123-shipped"}}
+     * @response 422 scenario="Template missing for channel" {"message":"Template [order_shipped] does not exist for the sms channel.","errors":{"template_name":["Template [order_shipped] does not exist for the sms channel."]}}
      * @response 201 scenario="Notification created" {"data":{"id":"uuid","batch_id":null,"channel":"sms","recipient":"+40745123456","content":"Your order has shipped!","priority":"high","status":"pending","idempotency_key":"order-123-shipped","processing_started_at":null,"delivered_at":null,"failed_at":null,"attempt_count":0,"last_error":null,"external_message_id":null,"created_at":"2026-04-29T10:00:00.000000Z","updated_at":"2026-04-29T10:00:00.000000Z"}}
      */
     public function store(StoreNotificationRequest $request): JsonResponse
@@ -73,16 +79,21 @@ class NotificationController extends Controller
     /**
      * Create a batch of notifications
      *
-     * Creates up to 1000 notifications in a single request, assigns a shared batch ID,
-     * and queues each notification based on priority.
+     * Creates up to 1000 notifications in a single request and assigns a shared batch ID.
+     * The batch is stored as a whole: if any item fails validation or template rendering,
+     * nothing is created and nothing is queued.
      *
      * @group Notifications
      *
      * @bodyParam notifications array required Notification payloads (min 1, max 1000 items).
      * @bodyParam notifications[].recipient string required Recipient for each notification. Example: user@example.com
      * @bodyParam notifications[].channel string required Delivery channel for each notification. Example: email
-     * @bodyParam notifications[].content string required Message content. Example: Flash sale starts now!
+     * @bodyParam notifications[].content string Message content. Required unless template_name is given. Example: Flash sale starts now!
      * @bodyParam notifications[].priority string Optional priority. Defaults to normal. Example: low
+     * @bodyParam notifications[].idempotency_key string Optional idempotency key per item. Example: campaign-2026-001
+     * @bodyParam notifications[].scheduled_at string Optional ISO 8601 send time. Example: 2026-05-01T09:30:00+00:00
+     * @bodyParam notifications[].template_name string Optional template for the item's channel. Example: flash_sale
+     * @bodyParam notifications[].template_variables object Values for the template placeholders. Example: {"discount":"30","product_name":"Headphones"}
      *
      * @response 201 scenario="Batch created" {"batch_id":"uuid","notifications":[{"id":"uuid","batch_id":"uuid","channel":"email","recipient":"user@example.com","content":"Flash sale starts now!","priority":"normal","status":"pending","idempotency_key":null,"processing_started_at":null,"delivered_at":null,"failed_at":null,"attempt_count":0,"last_error":null,"external_message_id":null,"created_at":"2026-04-29T10:00:00.000000Z","updated_at":"2026-04-29T10:00:00.000000Z"}]}
      */
@@ -140,7 +151,7 @@ class NotificationController extends Controller
      *
      * @group Notifications
      *
-     * @response 200 {"data":{"id":"uuid","status":"cancelled","updated_at":"2026-04-29T10:15:00.000000Z"}}
+     * @response 200 {"data":{"id":"uuid","batch_id":null,"channel":"sms","recipient":"+40745123456","content":"Your order has shipped!","priority":"normal","status":"cancelled","idempotency_key":null,"scheduled_at":"2026-05-01T09:30:00+00:00","queued_at":null,"processing_started_at":null,"delivered_at":null,"failed_at":null,"attempt_count":0,"last_error":null,"external_message_id":null,"created_at":"2026-04-29T10:00:00+00:00","updated_at":"2026-04-29T10:15:00+00:00"}}
      * @response 422 {"message":"The given data was invalid.","errors":{"notification":["Only pending notifications can be cancelled."]}}
      */
     public function cancel(Notification $notification): NotificationResource

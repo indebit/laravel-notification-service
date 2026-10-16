@@ -11,7 +11,7 @@ use function Knuckles\Scribe\Config\removeStrategies;
 
 return [
     // The HTML <title> for the generated documentation.
-    'title' => 'Notification System API Documentation',
+    'title' => 'Notification Service API',
 
     // A short description of your API. Will be included in the docs webpage, Postman collection and OpenAPI spec.
     'description' => 'Event-driven internal notification microservice for creating, queueing, delivering, and tracking SMS, email, and push notifications at scale.',
