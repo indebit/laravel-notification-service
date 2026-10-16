@@ -13,14 +13,14 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\Backoff;
 use Illuminate\Queue\Attributes\MaxExceptions;
 use Illuminate\Queue\Attributes\Timeout;
-use Illuminate\Queue\Middleware\RateLimitedWithRedis;
-use Illuminate\Queue\Middleware\ThrottlesExceptionsWithRedis;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Up to five delivery attempts within an hour. Rate limit releases do not count as attempts,
- * because the job is bounded by retryUntil() and MaxExceptions instead of a fixed number of tries.
+ * Up to five delivery attempts, spaced by the backoff, within an hour. Rate limit releases do not
+ * count as attempts, because the job is bounded by retryUntil() and MaxExceptions instead of a
+ * fixed number of tries.
  */
 #[Backoff(5, 30, 120, 600)]
 #[Timeout(30)]
@@ -39,10 +39,7 @@ class SendNotificationJob implements ShouldQueue
      */
     public function middleware(): array
     {
-        return [
-            new RateLimitedWithRedis('notification-channel'),
-            new ThrottlesExceptionsWithRedis(10, 60),
-        ];
+        return [new RateLimited('notification-channel')];
     }
 
     public function retryUntil(): DateTime
