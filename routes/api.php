@@ -8,8 +8,10 @@ use Illuminate\Support\Facades\Route;
 Route::get('/metrics', [ObservabilityController::class, 'metrics'])->name('observability.metrics');
 Route::get('/health', [ObservabilityController::class, 'health'])->name('observability.health');
 
-/** Debug-only: triggers a sample NotificationStatusChanged broadcast for WebSocket / Reverb verification (see README). */
-Route::post('/test/broadcast', [NotificationController::class, 'testBroadcast'])->name('test.broadcast');
+// Local development only: broadcasts a sample status change to check the Reverb setup.
+if (app()->environment('local')) {
+    Route::post('/test/broadcast', [NotificationController::class, 'testBroadcast'])->name('test.broadcast');
+}
 
 Route::group(['prefix' => 'notifications', 'as' => 'notifications.'], function (): void {
     Route::post('/', [NotificationController::class, 'store'])->name('store');
@@ -21,7 +23,7 @@ Route::group(['prefix' => 'notifications', 'as' => 'notifications.'], function (
 });
 
 Route::group(['prefix' => 'templates', 'as' => 'templates.'], function (): void {
-    Route::post('/', [TemplateController::class, 'store'])->name('templates.store');
-    Route::get('/', [TemplateController::class, 'index'])->name('templates.index');
-    Route::get('/{template}', [TemplateController::class, 'show'])->name('templates.show');
+    Route::post('/', [TemplateController::class, 'store'])->name('store');
+    Route::get('/', [TemplateController::class, 'index'])->name('index');
+    Route::get('/{template}', [TemplateController::class, 'show'])->name('show');
 });

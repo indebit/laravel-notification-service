@@ -29,26 +29,20 @@ class NotificationController extends Controller
      *
      * @group Websocket Testing
      *
-     * @response 200 {"message":"Broadcast sent","notification":{"id":"uuid","status":"pending"}}
+     * @response 200 {"message":"Broadcast sent","notification_id":"uuid"}
      * @response 404 {"message":"No notifications found"}
      */
     public function testBroadcast(): JsonResponse
     {
         $notification = Notification::query()->latest()->first();
-        if ($notification) {
-            broadcast(new NotificationStatusChanged(
-                $notification,
-                NotificationStatus::Pending,
-                NotificationStatus::Delivered
-            ));
 
-            return response()->json([
-                'message' => 'Broadcast sent',
-                'notification' => $notification,
-            ], Response::HTTP_OK);
+        if ($notification === null) {
+            return response()->json(['message' => 'No notifications found'], Response::HTTP_NOT_FOUND);
         }
 
-        return response()->json(['message' => 'No notifications found'], Response::HTTP_NOT_FOUND)->setStatusCode(Response::HTTP_NOT_FOUND);
+        broadcast(new NotificationStatusChanged($notification, NotificationStatus::Pending, NotificationStatus::Delivered));
+
+        return response()->json(['message' => 'Broadcast sent', 'notification_id' => $notification->id]);
     }
 
     /**

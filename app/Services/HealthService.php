@@ -55,7 +55,7 @@ class HealthService
             return [
                 'status' => 'failed',
                 'latency_ms' => $this->latencyMs($start),
-                'error' => $exception->getMessage(),
+                ...$this->error($exception),
             ];
         }
     }
@@ -78,7 +78,7 @@ class HealthService
             return [
                 'status' => 'failed',
                 'latency_ms' => $this->latencyMs($start),
-                'error' => $exception->getMessage(),
+                ...$this->error($exception),
             ];
         }
     }
@@ -101,9 +101,19 @@ class HealthService
         } catch (\Throwable $exception) {
             return [
                 'status' => 'inactive',
-                'error' => $exception->getMessage(),
+                ...$this->error($exception),
             ];
         }
+    }
+
+    /**
+     * Connection errors can include hosts and credentials, so they are only shown in debug mode.
+     *
+     * @return array<string, string>
+     */
+    private function error(\Throwable $exception): array
+    {
+        return config('app.debug') ? ['error' => $exception->getMessage()] : [];
     }
 
     private function latencyMs(float $start): int
