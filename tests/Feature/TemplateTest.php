@@ -163,3 +163,13 @@ it('rejects the whole batch when one template fails to render', function (): voi
     expect(Notification::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 });
+
+it('validates template fields per batch item', function (): void {
+    postJson('/api/notifications/batch', [
+        'notifications' => [
+            ['recipient' => 'a@example.com', 'channel' => 'email', 'template_name' => 'welcome'],
+            ['recipient' => 'b@example.com', 'channel' => 'email'],
+        ],
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['notifications.0.template_variables', 'notifications.1.content']);
+});
