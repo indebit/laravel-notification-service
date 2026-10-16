@@ -55,7 +55,8 @@ class NotificationController extends Controller
      * Create a notification
      *
      * Creates a new notification and queues it for delivery. If an idempotency_key
-     * is provided and matches an existing notification, the existing one is returned.
+     * is provided and matches an existing notification, the existing one is returned
+     * with status 200 and nothing is queued again.
      *
      * @group Notifications
      *
@@ -72,7 +73,7 @@ class NotificationController extends Controller
 
         return (new NotificationResource($notification))
             ->response()
-            ->setStatusCode(Response::HTTP_CREATED);
+            ->setStatusCode($notification->wasRecentlyCreated ? Response::HTTP_CREATED : Response::HTTP_OK);
     }
 
     /**

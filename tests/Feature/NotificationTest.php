@@ -8,7 +8,6 @@ use App\Models\Notification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Str;
 
 use function Pest\Laravel\getJson;
 use function Pest\Laravel\patchJson;
@@ -93,10 +92,30 @@ it('returns existing notification for the same idempotency key', function (): vo
     $payload = notificationPayload(['idempotency_key' => 'idem-key-1']);
 
     $first = postJson('/api/notifications', $payload)->assertCreated()->json('data.id');
-    $second = postJson('/api/notifications', $payload)->assertCreated()->json('data.id');
+    $second = postJson('/api/notifications', $payload)->assertOk()->json('data.id');
 
     expect($second)->toBe($first);
     expect(Notification::query()->count())->toBe(1);
+    Queue::assertPushedTimes(SendNotificationJob::class, 1);
+});
+
+it('returns the stored notification instead of failing on a duplicate idempotency key', function (): void {
+    $stored = Notification::query()->create([
+        'channel' => 'sms',
+        'recipient' => '+40745123456',
+        'content' => 'Stored by an earlier request',
+        'priority' => 'normal',
+        'status' => 'pending',
+        'idempotency_key' => 'race-key',
+    ]);
+
+    postJson('/api/notifications', notificationPayload(['idempotency_key' => 'race-key']))
+        ->assertOk()
+        ->assertJsonPath('data.id', $stored->id)
+        ->assertJsonPath('data.content', 'Stored by an earlier request');
+
+    expect(Notification::query()->count())->toBe(1);
+    Queue::assertNothingPushed();
 });
 
 it('creates a batch and all notifications share the same batch_id', function (): void {

@@ -107,16 +107,6 @@ class NotificationService
      */
     private function persist(array $data): Notification
     {
-        $idempotencyKey = $data['idempotency_key'] ?? null;
-
-        if (is_string($idempotencyKey)) {
-            $existingNotification = Notification::where('idempotency_key', $idempotencyKey)->first();
-
-            if ($existingNotification instanceof Notification) {
-                return $existingNotification;
-            }
-        }
-
         if (isset($data['template_name'])) {
             $data['content'] = $this->templateService->render(
                 (string) $data['template_name'],
@@ -126,12 +116,19 @@ class NotificationService
         }
 
         $priority = $data['priority'] ?? NotificationPriority::Normal->value;
-
-        return Notification::create([
+        $attributes = [
             ...$data,
             'status' => NotificationStatus::Pending,
             'priority' => $priority instanceof NotificationPriority ? $priority : NotificationPriority::from((string) $priority),
-        ]);
+        ];
+
+        $idempotencyKey = $data['idempotency_key'] ?? null;
+
+        // Insert first and let the unique index decide: a repeated or concurrent request with the
+        // same key gets the stored row back instead of a constraint violation.
+        return is_string($idempotencyKey)
+            ? Notification::createOrFirst(['idempotency_key' => $idempotencyKey], $attributes)
+            : Notification::create($attributes);
     }
 
     private function dispatchUnlessScheduled(Notification $notification): void
