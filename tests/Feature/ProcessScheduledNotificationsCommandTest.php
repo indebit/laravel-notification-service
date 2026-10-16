@@ -116,3 +116,33 @@ it('queues an unscheduled notification straight away and marks it as queued', fu
     expect(Notification::query()->find($id)?->queued_at)->not->toBeNull();
     Queue::assertPushed(SendNotificationJob::class, 1);
 });
+
+it('recovers a notification whose dispatch failed when it was created', function (): void {
+    $notification = Notification::query()->create([
+        'channel' => NotificationChannel::Sms,
+        'recipient' => '+40745123456',
+        'content' => 'Missed dispatch',
+        'priority' => NotificationPriority::Normal,
+        'status' => NotificationStatus::Pending,
+    ]);
+    Notification::query()->whereKey($notification->id)->update(['created_at' => now()->subMinutes(2)]);
+
+    artisan('notifications:process-scheduled')->assertExitCode(0);
+
+    Queue::assertPushed(SendNotificationJob::class, 1);
+    expect($notification->fresh()?->queued_at)->not->toBeNull();
+});
+
+it('leaves a fresh unqueued notification to the request that created it', function (): void {
+    Notification::query()->create([
+        'channel' => NotificationChannel::Sms,
+        'recipient' => '+40745123456',
+        'content' => 'Just created',
+        'priority' => NotificationPriority::Normal,
+        'status' => NotificationStatus::Pending,
+    ]);
+
+    artisan('notifications:process-scheduled')->assertExitCode(0);
+
+    Queue::assertNothingPushed();
+});

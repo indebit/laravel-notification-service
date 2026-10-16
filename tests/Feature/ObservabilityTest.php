@@ -119,7 +119,7 @@ it('hides connection error details outside debug mode', function (): void {
         ->assertJsonPath('status', 'unhealthy')
         ->json();
 
-    expect($response['checks']['redis'])->not->toHaveKey('error');
+    expect($response['checks']['redis']['error'])->not->toContain('secret');
 });
 
 it('counts only queued notifications in queue depth', function (): void {

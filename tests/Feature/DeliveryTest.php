@@ -302,3 +302,24 @@ it('stores no external message id when the provider omits it', function (): void
 
     expect($notification->fresh()?->external_message_id)->toBeNull();
 });
+
+it('does not deliver a notification cancelled after the job was picked up', function (): void {
+    Http::fake();
+
+    $notification = Notification::query()->create([
+        'channel' => NotificationChannel::Sms,
+        'recipient' => '+40745000005',
+        'content' => 'Cancelled at the last moment',
+        'priority' => NotificationPriority::Normal,
+        'status' => NotificationStatus::Pending,
+    ]);
+
+    $job = new SendNotificationJob($notification);
+    Notification::query()->whereKey($notification->id)->update(['status' => NotificationStatus::Cancelled]);
+
+    expect(app(DeliveryService::class)->deliver($notification))->toBeFalse();
+    $job->failed(new NotificationDeliveryFailed('late failure'));
+
+    Http::assertNothingSent();
+    expect($notification->fresh()?->status)->toBe(NotificationStatus::Cancelled);
+});

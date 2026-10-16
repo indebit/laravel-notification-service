@@ -60,7 +60,9 @@ class SendNotificationJob implements ShouldQueue
             'channel' => $notification->channel->value,
         ]);
 
-        $deliveryService->deliver($notification);
+        if (! $deliveryService->deliver($notification)) {
+            return;
+        }
 
         Log::info('Notification delivered.', [
             'notification_id' => $notification->id,

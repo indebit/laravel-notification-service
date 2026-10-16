@@ -10,7 +10,7 @@ MySQL holds notifications, templates and per-attempt logs. Redis backs queues, c
 
 ## How it works
 
-A client calls the JSON API under `/api`. Form requests validate the payload and controllers delegate to services. `NotificationService` stores the row (rendering a template if one is given), then dispatches `SendNotificationJob` to the queue for its priority, unless `scheduled_at` defers it. Horizon workers pick up the job, apply a Redis-backed rate limit per channel and exception throttling, and `DeliveryService` POSTs to the provider. A 202 response marks the notification delivered. Any other response, or a connection error, is logged as a failed attempt and the job is retried. `NotificationStatusChanged` is broadcast on every status change.
+A client calls the JSON API under `/api`. Form requests validate the payload and controllers delegate to services. `NotificationService` stores the row (rendering a template if one is given), then dispatches `SendNotificationJob` to the queue for its priority, unless `scheduled_at` defers it. Horizon workers pick up the job, apply a rate limit per channel, and `DeliveryService` POSTs to the provider. A 202 response marks the notification delivered. Any other response, or a connection error, is logged as a failed attempt and the job is retried. `NotificationStatusChanged` is broadcast on every status change.
 
 ## Tech stack
 
@@ -141,7 +141,8 @@ Only registered when `APP_ENV=local`:
 - Any other response, or a connection error, is logged as a failed attempt in `notification_logs`. The notification goes back to `pending` with `last_error` and `attempt_count` updated, and the job is retried after **5s, 30s, 2 min and 10 min**.
 - After **five** failed attempts, or one hour, the job's `failed()` hook marks the notification `failed`.
 - Rate limit releases do not count as attempts: the job is bounded by `retryUntil()` and `#[MaxExceptions(5)]` rather than a fixed number of tries.
-- A job for a notification that is no longer `pending` or `processing` (for example cancelled) exits without calling the provider.
+- Status changes are conditional on the stored status, so a notification cancelled while a worker holds it is never sent or revived by a late failure.
+- `tests/Feature/DeliveryRetryTest.php` runs the job through a real worker on the database queue to check the backoff delays and the five-attempt limit.
 
 ## Idempotency, batches and scheduling
 
@@ -149,6 +150,7 @@ Only registered when `APP_ENV=local`:
 - A batch is stored in one transaction. If any item fails validation or template rendering, the response is 422 with errors keyed by item (`notifications.3.template_variables`) and nothing is created or queued.
 - A template only applies to its own channel. A template that is missing for the channel, or a missing placeholder value, returns 422.
 - Scheduled notifications are picked up every minute by `notifications:process-scheduled`. Each row is claimed with a conditional update on `queued_at` before its job is dispatched, and the command runs without overlapping on one server, so a notification is never queued twice. `scheduled_at` is kept as sent.
+- The same command recovers any notification that is still unqueued a minute after it was created, for example because Redis was unreachable when the request came in.
 
 ## Architecture decisions
 
@@ -160,7 +162,7 @@ Notification keys are UUIDs (`HasUuids`), so IDs do not reveal volume.
 
 Each delivery attempt is its own row in `notification_logs`, which keeps attempts queryable for metrics, p95 latency and auditing.
 
-Per-channel throughput is limited with `RateLimitedWithRedis` on the job, using one named limiter keyed by channel. `ThrottlesExceptionsWithRedis` backs off when the provider keeps failing.
+Per-channel throughput is limited with the `RateLimited` job middleware, using one named limiter keyed by channel and backed by the Redis cache store.
 
 `CorrelationIdMiddleware` accepts or generates `X-Correlation-ID`, adds it to the log context and returns it on the response.
 
@@ -170,7 +172,7 @@ This is a service meant to run behind other backends on a private network. It ha
 
 ## Testing
 
-72 Pest tests cover creation, idempotency, batches, validation, templates, delivery and retries, scheduling, cancellation, metrics and health. Queue and HTTP calls are faked, so the suite runs in a few seconds on SQLite in memory.
+The Pest suite covers creation, idempotency, batches, validation, templates, delivery and retries, scheduling, cancellation, metrics and health. HTTP calls are faked and most tests fake the queue; the retry tests use a real worker on the database queue. The suite runs in a few seconds on SQLite in memory.
 
 ```bash
 docker compose exec app php artisan test

@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Enums\NotificationStatus;
+use App\Events\NotificationStatusChanged;
 use App\Jobs\SendNotificationJob;
 use App\Models\Notification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
@@ -235,4 +237,16 @@ it('cannot cancel a delivered notification', function (): void {
     patchJson("/api/notifications/{$notification->id}/cancel")
         ->assertStatus(422)
         ->assertJsonValidationErrors(['notification']);
+});
+
+it('broadcasts the status change when a notification is cancelled', function (): void {
+    Event::fake([NotificationStatusChanged::class]);
+
+    $id = postJson('/api/notifications', notificationPayload([
+        'scheduled_at' => now()->addHour()->toIso8601String(),
+    ]))->assertCreated()->json('data.id');
+
+    patchJson("/api/notifications/{$id}/cancel")->assertOk()->assertJsonPath('data.status', 'cancelled');
+
+    Event::assertDispatched(NotificationStatusChanged::class, fn (NotificationStatusChanged $event): bool => $event->newStatus === NotificationStatus::Cancelled);
 });

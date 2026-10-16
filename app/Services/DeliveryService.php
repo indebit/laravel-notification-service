@@ -23,15 +23,21 @@ class DeliveryService
      * is thrown so the queue can retry it. The notification is only marked as failed once the
      * job gives up, in markFailed().
      *
+     * Returns false when the notification was cancelled or finished before this attempt started.
+     *
      * @throws NotificationDeliveryFailed|ConnectionException
      */
-    public function deliver(Notification $notification): void
+    public function deliver(Notification $notification): bool
     {
         $attemptNumber = $notification->attempt_count + 1;
 
-        $this->transition($notification, NotificationStatus::Processing, [
+        $claimed = $this->transition($notification, NotificationStatus::Processing, [
             'processing_started_at' => now(),
-        ]);
+        ], from: [NotificationStatus::Pending, NotificationStatus::Processing]);
+
+        if (! $claimed) {
+            return false;
+        }
 
         $start = microtime(true);
 
@@ -75,6 +81,8 @@ class DeliveryService
             'attempt_count' => $attemptNumber,
             'last_error' => null,
         ]);
+
+        return true;
     }
 
     /**
@@ -82,14 +90,10 @@ class DeliveryService
      */
     public function markFailed(Notification $notification, string $reason): void
     {
-        if (in_array($notification->status, [NotificationStatus::Delivered, NotificationStatus::Cancelled], true)) {
-            return;
-        }
-
         $this->transition($notification, NotificationStatus::Failed, [
             'last_error' => $reason,
             'failed_at' => now(),
-        ]);
+        ], from: [NotificationStatus::Pending, NotificationStatus::Processing]);
     }
 
     /**
@@ -115,21 +119,40 @@ class DeliveryService
         $this->transition($notification, NotificationStatus::Pending, [
             'attempt_count' => $attemptNumber,
             'last_error' => $error,
-        ]);
+        ], from: [NotificationStatus::Processing]);
     }
 
     /**
+     * Move the notification to a new status. With $from, the update only applies while the stored
+     * status is one of those, so a concurrent cancel is never overwritten.
+     *
      * @param  array<string, mixed>  $attributes
+     * @param  list<NotificationStatus>  $from
      */
-    private function transition(Notification $notification, NotificationStatus $status, array $attributes = []): void
+    private function transition(Notification $notification, NotificationStatus $status, array $attributes = [], array $from = []): bool
     {
         $oldStatus = $notification->status;
 
-        $notification->update([...$attributes, 'status' => $status]);
+        if ($from === []) {
+            $notification->update([...$attributes, 'status' => $status]);
+        } else {
+            $updated = Notification::query()
+                ->whereKey($notification->getKey())
+                ->whereIn('status', $from)
+                ->update([...$attributes, 'status' => $status]);
+
+            $notification->refresh();
+
+            if ($updated === 0) {
+                return false;
+            }
+        }
 
         if ($oldStatus !== $status) {
             event(new NotificationStatusChanged($notification, $oldStatus, $status));
         }
+
+        return true;
     }
 
     private function errorMessage(Response $response): string

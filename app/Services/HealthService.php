@@ -107,13 +107,13 @@ class HealthService
     }
 
     /**
-     * Connection errors can include hosts and credentials, so they are only shown in debug mode.
+     * Connection errors can include hosts and credentials, so the detail is only shown in debug mode.
      *
      * @return array<string, string>
      */
     private function error(\Throwable $exception): array
     {
-        return config('app.debug') ? ['error' => $exception->getMessage()] : [];
+        return ['error' => config('app.debug') ? $exception->getMessage() : 'Check failed.'];
     }
 
     private function latencyMs(float $start): int

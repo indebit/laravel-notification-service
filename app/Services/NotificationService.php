@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\NotificationChannel;
 use App\Enums\NotificationPriority;
 use App\Enums\NotificationStatus;
+use App\Events\NotificationStatusChanged;
 use App\Jobs\SendNotificationJob;
 use App\Models\Notification;
 use Carbon\Carbon;
@@ -82,7 +83,10 @@ class NotificationService
             ]);
         }
 
-        return $notification->refresh();
+        $notification->refresh();
+        event(new NotificationStatusChanged($notification, NotificationStatus::Pending, NotificationStatus::Cancelled));
+
+        return $notification;
     }
 
     /**
@@ -136,8 +140,8 @@ class NotificationService
     private function dispatchUnlessScheduled(Notification $notification): void
     {
         if ($notification->wasRecentlyCreated && $notification->scheduled_at === null) {
-            $notification->update(['queued_at' => now()]);
             SendNotificationJob::dispatch($notification);
+            $notification->update(['queued_at' => now()]);
         }
     }
 }
