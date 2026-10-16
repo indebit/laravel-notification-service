@@ -70,17 +70,19 @@ class NotificationService
 
     public function cancel(Notification $notification): Notification
     {
-        if ($notification->status !== NotificationStatus::Pending) {
+        // Conditional update, so a worker that picks the notification up at the same moment wins.
+        $cancelled = Notification::query()
+            ->whereKey($notification->getKey())
+            ->where('status', NotificationStatus::Pending)
+            ->update(['status' => NotificationStatus::Cancelled]);
+
+        if ($cancelled === 0) {
             throw ValidationException::withMessages([
                 'notification' => ['Only pending notifications can be cancelled.'],
             ]);
         }
 
-        $notification->update([
-            'status' => NotificationStatus::Cancelled,
-        ]);
-
-        return $notification->fresh() ?? $notification;
+        return $notification->refresh();
     }
 
     /**

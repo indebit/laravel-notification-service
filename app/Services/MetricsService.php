@@ -49,6 +49,7 @@ class MetricsService
         $pendingByPriority = Notification::query()
             ->select('priority', DB::raw('COUNT(*) as total'))
             ->where('status', NotificationStatus::Pending->value)
+            ->whereNotNull('queued_at')
             ->groupBy('priority')
             ->pluck('total', 'priority');
 
