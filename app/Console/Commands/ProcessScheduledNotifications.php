@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Enums\NotificationPriority;
 use App\Enums\NotificationStatus;
 use App\Jobs\SendNotificationJob;
 use App\Models\Notification;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Database\Eloquent\Collection;
 
 #[Signature('notifications:process-scheduled')]
 #[Description('Dispatch due scheduled notifications to queue workers')]
@@ -22,33 +21,26 @@ class ProcessScheduledNotifications extends Command
         $dispatched = 0;
 
         Notification::query()
-            ->where('status', NotificationStatus::Pending->value)
-            ->whereNotNull('scheduled_at')
+            ->where('status', NotificationStatus::Pending)
+            ->whereNull('queued_at')
             ->where('scheduled_at', '<=', now())
-            ->orderBy('scheduled_at')
-            ->chunkById(100, function ($notifications) use (&$dispatched): void {
+            ->chunkById(100, function (Collection $notifications) use (&$dispatched): void {
                 foreach ($notifications as $notification) {
-                    Log::info('Processing scheduled notification.', [
-                        'notification_id' => $notification->id,
-                        'scheduled_at' => $notification->scheduled_at,
-                    ]);
-                    SendNotificationJob::dispatch($notification)->onQueue($this->queueName($notification->priority));
-                    $notification->forceFill(['scheduled_at' => null])->saveQuietly();
-                    $dispatched++;
+                    // Claim the row first, so a second scheduler run cannot queue it again.
+                    $claimed = Notification::query()
+                        ->whereKey($notification->getKey())
+                        ->whereNull('queued_at')
+                        ->update(['queued_at' => now()]);
+
+                    if ($claimed === 1) {
+                        SendNotificationJob::dispatch($notification);
+                        $dispatched++;
+                    }
                 }
             });
 
         $this->info("Dispatched {$dispatched} scheduled notifications.");
 
         return self::SUCCESS;
-    }
-
-    private function queueName(NotificationPriority $priority): string
-    {
-        return match ($priority) {
-            NotificationPriority::High => 'high',
-            NotificationPriority::Low => 'low',
-            NotificationPriority::Normal => 'default',
-        };
     }
 }

@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
 use function Pest\Laravel\artisan;
+use function Pest\Laravel\postJson;
 
 uses(RefreshDatabase::class);
 
@@ -35,7 +36,10 @@ it('dispatches SendNotificationJob for pending notifications whose scheduled_at 
         return $job->notification->id === $notification->id;
     });
 
-    expect($notification->fresh()->scheduled_at)->toBeNull();
+    $notification->refresh();
+
+    expect($notification->scheduled_at)->not->toBeNull()
+        ->and($notification->queued_at)->not->toBeNull();
 });
 
 it('does not enqueue duplicate jobs when the scheduler runs again before the worker processes the notification', function (): void {
@@ -82,4 +86,33 @@ it('does not dispatch jobs for future scheduled_at or non-pending scheduled noti
     artisan('notifications:process-scheduled')->assertExitCode(0);
 
     Queue::assertNothingPushed();
+});
+
+it('dispatches every due notification across several chunks', function (): void {
+    foreach (range(1, 230) as $i) {
+        Notification::query()->create([
+            'channel' => NotificationChannel::Email,
+            'recipient' => "user{$i}@example.com",
+            'content' => 'Due',
+            'priority' => NotificationPriority::Normal,
+            'status' => NotificationStatus::Pending,
+            'scheduled_at' => now()->subMinutes($i),
+        ]);
+    }
+
+    artisan('notifications:process-scheduled')->assertExitCode(0);
+
+    Queue::assertPushed(SendNotificationJob::class, 230);
+    expect(Notification::query()->whereNull('queued_at')->count())->toBe(0);
+});
+
+it('queues an unscheduled notification straight away and marks it as queued', function (): void {
+    $id = postJson('/api/notifications', [
+        'recipient' => '+40745123456',
+        'channel' => 'sms',
+        'content' => 'Right now',
+    ])->assertCreated()->json('data.id');
+
+    expect(Notification::query()->find($id)?->queued_at)->not->toBeNull();
+    Queue::assertPushed(SendNotificationJob::class, 1);
 });

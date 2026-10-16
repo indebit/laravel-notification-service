@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $recipient
  * @property string|null $content
  * @property Carbon|null $scheduled_at
+ * @property Carbon|null $queued_at
  * @property NotificationPriority $priority
  * @property NotificationStatus $status
  * @property string|null $idempotency_key
@@ -46,6 +47,7 @@ class Notification extends Model
         'recipient',
         'content',
         'scheduled_at',
+        'queued_at',
         'priority',
         'status',
         'idempotency_key',
@@ -67,6 +69,7 @@ class Notification extends Model
             'priority' => NotificationPriority::class,
             'status' => NotificationStatus::class,
             'scheduled_at' => 'datetime',
+            'queued_at' => 'datetime',
             'processing_started_at' => 'datetime',
             'delivered_at' => 'datetime',
             'failed_at' => 'datetime',

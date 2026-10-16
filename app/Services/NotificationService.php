@@ -134,6 +134,7 @@ class NotificationService
     private function dispatchUnlessScheduled(Notification $notification): void
     {
         if ($notification->wasRecentlyCreated && $notification->scheduled_at === null) {
+            $notification->update(['queued_at' => now()]);
             SendNotificationJob::dispatch($notification);
         }
     }
